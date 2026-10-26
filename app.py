@@ -44,9 +44,7 @@ def fetch_live_flights():
 st.subheader("Live Airspace Grid")
 
 # Create a Folium map centered over a target region (e.g., India coordinates)
-m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, tiles="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", attr="&copy; OpenStreetMap &copy; CARTO")
-
-# Fetch flights and add markers to the map
+m = folium.Map(location=[20.5937, 78.9629], zoom_start=5)# Fetch flights and add markers to the map
 flight_data = fetch_live_flights()
 for flight in flight_data:
     folium.CircleMarker(
