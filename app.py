@@ -13,6 +13,15 @@ st.caption("Monitoring live airspace behaviour, Flight DNA baselines, and Explai
 st.sidebar.header("Radar Controls")
 refresh_rate = st.sidebar.slider("Data Refresh Rate (seconds)", 5, 60, 10)
 
+# Sidebar Simulation Controls
+st.sidebar.markdown("---")
+st.sidebar.header("🧪 Anomaly Simulator (Member 2)")
+enable_simulation = st.sidebar.checkbox("Inject Test Anomaly Scenario")
+sim_type = st.sidebar.selectbox(
+    "Select Emergency Type",
+    ["altitude_drop", "speed_burst", "vrate_spike"]
+)
+
 @st.cache_data(ttl=10)
 def fetch_live_flights():
     """Fetches real-time flight data over India/South Asia with safe fallback handling."""
@@ -51,6 +60,13 @@ def fetch_live_flights():
 
 # Fetch live flights
 flights = fetch_live_flights()
+
+from simulator import inject_synthetic_anomaly
+
+# Apply simulation if toggled on
+if enable_simulation and flights:
+    # Inject anomaly into the first flight in the list for demonstration
+    flights[0] = inject_synthetic_anomaly(flights[0], anomaly_type=sim_type)
 
 # Summary Metrics Bar
 st.subheader("Airspace Status Overview")
