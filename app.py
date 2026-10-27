@@ -98,3 +98,30 @@ for f in flights:
     ).add_to(m)
 
 st_folium(m, width="100%", height=500)
+
+# XAI / Explainable AI Diagnostic Panel
+st.subheader("🤖 Explainable AI (XAI) Flight Diagnostics")
+st.caption("Automated rule justification and reasoning for flagged airspace deviations.")
+
+# Filter flights that have deviations
+flagged_flights = [f for f in flights if f["baseline"]["baseline_status"] != "NORMAL"]
+
+if flagged_flights:
+    for f in flagged_flights:
+        with st.expander(f"⚠️ Alert: Flight {f['callsign']} - Deviation Detected"):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.markdown(f"**Current Altitude:** {f['altitude']} meters")
+                st.markdown(f"**Current Velocity:** {f['velocity']} m/s")
+                st.markdown(f"**Vertical Rate:** {f['vertical_rate']} m/s")
+            with col_b:
+                # XAI Reasoning Breakdown
+                info = f["baseline"]
+                st.markdown("**Flight DNA Evaluation:**")
+                if not info["is_speed_normal"]:
+                    st.error(f"• Velocity anomaly! Speed ({f['velocity']} m/s) is outside normal bounds [{info['expected_min_speed']} - {info['expected_max_speed']} m/s].")
+                if not info["is_vrate_normal"]:
+                    st.error(f"• Vertical rate anomaly! Climb/descent rate ({f['vertical_rate']} m/s) exceeds maximum safe threshold.")
+                st.info("💡 **AI Recommendation:** Flagged for secondary radar verification and transponder confirmation.")
+else:
+    st.success("✅ All tracked targets in the current airspace grid are operating within normal Flight DNA parameters.")
