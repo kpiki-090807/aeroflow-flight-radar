@@ -1,143 +1,225 @@
+# app.py - Real-Time Flight Anomaly Radar (Production-Grade War Room Dashboard)
+
 import streamlit as st
+import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import requests
+from datetime import datetime
 from baseline import calculate_baseline
+from simulator import get_simulated_flights
 
-st.set_page_config(page_title="Real-Time Flight Anomaly Radar", layout="wide")
-
-st.title("✈️ Real-Time Flight Anomaly Radar [War Room]")
-st.caption("Monitoring live airspace behaviour, Flight DNA baselines, and Explainable AI alerts.")
-
-# Sidebar Controls
-st.sidebar.header("Radar Controls")
-refresh_rate = st.sidebar.slider("Data Refresh Rate (seconds)", 5, 60, 10)
-
-# Sidebar Simulation Controls
-st.sidebar.markdown("---")
-st.sidebar.header("🧪 Anomaly Simulator (Member 2)")
-enable_simulation = st.sidebar.checkbox("Inject Test Anomaly Scenario")
-sim_type = st.sidebar.selectbox(
-    "Select Emergency Type",
-    ["altitude_drop", "speed_burst", "vrate_spike"]
+# 1. Page Configuration & War Room Styling
+st.set_page_config(
+    page_title="Flight Anomaly Radar",
+    page_icon="✈️",
+    layout="wide"
 )
 
-@st.cache_data(ttl=10)
-def fetch_live_flights():
-    """Fetches real-time flight data over India/South Asia with safe fallback handling."""
-    url = "https://opensky-network.org/api/states/all?lamin=6.0&lamax=35.0&lomin=68.0&lomax=97.0"
+st.markdown("""
+<style>
+    /* Sleek minimal dark card styling */
+    div[data-testid="stExpander"] {
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 8px !important;
+        background-color: rgba(15, 23, 42, 0.6) !important;
+    }
+    .critical-header {
+        color: #ef4444;
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin-top: 1rem;
+    }
+    .warning-header {
+        color: #f59e0b;
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin-top: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🛰️ Real-Time Flight Anomaly Radar")
+st.caption("War Room Airspace Surveillance & Aerodynamic Flight DNA Diagnostics")
+
+# 2. Helper Functions
+def derive_flight_metrics(alt, vrate, speed):
+    if alt < 1000 and vrate > 2.0:
+        phase = "🛫 Taking Off"
+        est_dist_km = 350.0
+    elif alt < 3000 and vrate < -2.0:
+        phase = "🛬 Landing"
+        est_dist_km = max(10.0, round((alt / 1000) * 15, 1))
+    elif alt < 100:
+        phase = "🅿️ Ground / Taxiing"
+        est_dist_km = 0.0
+    else:
+        phase = "✈️ Cruising / En Route"
+        est_dist_km = 450.0
+
+    speed_kmh = max(speed * 3.6, 1.0)
+    duration_mins = int((est_dist_km / speed_kmh) * 60) if est_dist_km > 0 else 0
+
+    return phase, est_dist_km, duration_mins
+
+# 3. Sidebar Controls & Simulator
+st.sidebar.header("🎛️ Radar Controls")
+data_source = st.sidebar.radio("Telemetry Source", ["Live OpenSky Feed", "Synthetic Anomaly Simulator"])
+
+flights = []
+if data_source == "Synthetic Anomaly Simulator":
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🚨 Inject Test Scenario")
+    anomaly_type = st.sidebar.selectbox("Scenario Type", ["None", "Altitude Drop", "Speed Burst", "Vertical Rate Spike"])
+    flights = get_simulated_flights(anomaly_type)
+else:
+    # Fetch live OpenSky API feed
     try:
+        url = "https://opensky-network.org/api/states/all"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
-            data = response.json()
-            states = data.get("states")
-            
-            if states and isinstance(states, list):
-                flights = []
-                for s in states[:30]:  # Limit to top 30 flights
-                    if len(s) > 11 and s[6] is not None and s[5] is not None:
-                        flights.append({
-                            "callsign": s[1].strip() if s[1] else "UNKNOWN",
-                            "lon": s[5],
-                            "lat": s[6],
-                            "altitude": s[7] if s[7] is not None else 0,
-                            "velocity": s[9] if s[9] is not None else 0,
-                            "vertical_rate": s[11] if s[11] is not None else 0
-                        })
-                if flights:
-                    return flights
+            states = response.json().get("states", [])
+            for s in states[:30]:  # Limit sample size for performance
+                if s[5] and s[6] and s[9] is not None:  # Ensure lon, lat, velocity exist
+                    flights.append({
+                        "callsign": s[1].strip() if s[1] else "UNKNOWN",
+                        "longitude": s[5],
+                        "latitude": s[6],
+                        "altitude": s[7] if s[7] is not None else 0.0,
+                        "velocity": s[9] if s[9] is not None else 0.0,
+                        "vertical_rate": s[11] if s[11] is not None else 0.0
+                    })
     except Exception as e:
-        st.warning(f"Telemetry API Notice: {e}")
-    
-    # Safe Fallback Mock Data so your radar always shows active targets
-    return [
-        {"callsign": "AIC101", "lon": 77.2090, "lat": 28.6139, "altitude": 10500, "velocity": 240, "vertical_rate": 0},
-        {"callsign": "IGO602", "lon": 72.8777, "lat": 19.0760, "altitude": 8500, "velocity": 190, "vertical_rate": -12},
-        {"callsign": "SEJ303", "lon": 78.4867, "lat": 17.3850, "altitude": 11200, "velocity": 310, "vertical_rate": 30},
-        {"callsign": "UAE505", "lon": 88.3639, "lat": 22.5726, "altitude": 3200, "velocity": 95, "vertical_rate": -2},
-        {"callsign": "IXR404", "lon": 80.2707, "lat": 13.0827, "altitude": 9800, "velocity": 210, "vertical_rate": 0}
-    ]
+        st.warning(f"Live feed connection warning: {e}. Falling back to default simulation.")
+        flights = get_simulated_flights("None")
 
-# Fetch live flights
-flights = fetch_live_flights()
+if not flights:
+    flights = get_simulated_flights("None")
 
-from simulator import inject_synthetic_anomaly
-
-# Apply simulation if toggled on
-if enable_simulation and flights:
-    # Inject anomaly into the first flight in the list for demonstration
-    flights[0] = inject_synthetic_anomaly(flights[0], anomaly_type=sim_type)
-
-# Summary Metrics Bar
-st.subheader("Airspace Status Overview")
-col1, col2, col3 = st.columns(3)
-
-total_flights = len(flights)
+# 4. Process Flight Baselines & Metrics
 normal_count = 0
 anomaly_count = 0
 
 for f in flights:
+    # Derive operational phase, distance, and duration
+    phase, dist_km, duration_mins = derive_flight_metrics(f["altitude"], f["vertical_rate"], f["velocity"])
+    f["phase"] = phase
+    f["dist_km"] = dist_km
+    f["duration_mins"] = duration_mins
+
+    # Calculate baseline compliance
     baseline_info = calculate_baseline(f["altitude"], f["velocity"], f["vertical_rate"])
     f["baseline"] = baseline_info
+
     if baseline_info["baseline_status"] == "NORMAL":
         normal_count += 1
     else:
         anomaly_count += 1
 
-col1.metric("Total Airspace Targets", total_flights)
-col2.metric("Nominal Flights (DNA Passed)", normal_count)
-col3.metric("Deviations / Anomaly Alerts", anomaly_count, delta_color="inverse")
+# Metric Overview Cards
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Tracked Targets", len(flights))
+col2.metric("Normal Operations", normal_count)
+col3.metric("Flagged Deviations", anomaly_count, delta_color="inverse")
 
-# Render Map
-st.subheader("Live Airspace Grid")
-m = folium.Map(location=[20.5937, 78.9629], zoom_start=5)
+st.markdown("---")
+
+# 5. Interactive Folium Map
+st.subheader("🗺️ Live Airspace Surveillance Map")
+# Change your folium.Map initialization to this:
+m = folium.Map(
+    location=[17.3850, 78.4867], 
+    zoom_start=6, 
+    tiles="OpenStreetMap"
+)
 
 for f in flights:
-    is_normal = f["baseline"]["baseline_status"] == "NORMAL"
-    marker_color = "cyan" if is_normal else "red"
-    
-    popup_text = (
-        f"<b>Callsign:</b> {f['callsign']}<br>"
-        f"<b>Altitude:</b> {f['altitude']} m<br>"
-        f"<b>Velocity:</b> {f['velocity']} m/s<br>"
-        f"<b>Status:</b> {'🟢 Normal' if is_normal else '🔴 Baseline Deviation'}"
-    )
-    
-    folium.CircleMarker(
-        location=[f["lat"], f["lon"]],
-        radius=6,
+    lat, lon = f["latitude"], f["longitude"]
+    callsign = f["callsign"]
+    status_flag = f["baseline"]["baseline_status"]
+    severity = f["baseline"].get("severity", "LOW")
+
+    # Color code markers based on severity
+    marker_color = "blue"
+    if status_flag != "NORMAL":
+        marker_color = "red" if severity == "CRITICAL" else "orange"
+
+    plane_icon = folium.Icon(
         color=marker_color,
-        fill=True,
-        fill_color=marker_color,
-        fill_opacity=0.8,
-        popup=popup_text
+        icon="plane",
+        prefix="fa"
+    )
+
+    popup_html = f"""
+    <div style="font-family: sans-serif; width: 180px;">
+        <b>Callsign:</b> {callsign}<br>
+        <b>Phase:</b> {f['phase']}<br>
+        <b>Altitude:</b> {f['altitude']} m<br>
+        <b>Velocity:</b> {f['velocity']} m/s<br>
+        <b>Dist Remaining:</b> {f['dist_km']} km<br>
+        <b>Est. Duration:</b> {f['duration_mins']} mins<br>
+        <b>Status:</b> {status_flag}
+    </div>
+    """
+
+    folium.Marker(
+        location=[lat, lon],
+        popup=folium.Popup(popup_html, max_width=250),
+        icon=plane_icon
     ).add_to(m)
 
 st_folium(m, width="100%", height=500)
 
-# XAI / Explainable AI Diagnostic Panel
+# 6. Dual-Section XAI Diagnostics Panel
+st.markdown("---")
 st.subheader("🤖 Explainable AI (XAI) Flight Diagnostics")
-st.caption("Automated rule justification and reasoning for flagged airspace deviations.")
+st.caption("Automated rule justification categorized by operational severity level.")
 
-# Filter flights that have deviations
-flagged_flights = [f for f in flights if f["baseline"]["baseline_status"] != "NORMAL"]
+critical_flights = [f for f in flights if f["baseline"].get("severity") == "CRITICAL"]
+minor_flights = [f for f in flights if f["baseline"].get("severity") == "WARNING"]
 
-if flagged_flights:
-    for f in flagged_flights:
-        with st.expander(f"⚠️ Alert: Flight {f['callsign']} - Deviation Detected"):
+# SECTION 1: CRITICAL THREATS
+st.markdown("<p class='critical-header'>🚨 Critical Airspace Threats</p>", unsafe_allow_html=True)
+
+if critical_flights:
+    for f in critical_flights:
+        with st.expander(f"🔴 CRITICAL ALERT: Flight {f['callsign']} - Immediate Attention Required"):
             col_a, col_b = st.columns(2)
             with col_a:
-                st.markdown(f"**Current Altitude:** {f['altitude']} meters")
-                st.markdown(f"**Current Velocity:** {f['velocity']} m/s")
-                st.markdown(f"**Vertical Rate:** {f['vertical_rate']} m/s")
+                st.markdown(f"**Flight Phase:** {f['phase']}")
+                st.markdown(f"**Est. Distance Remaining:** {f['dist_km']} km")
+                st.markdown(f"**Est. Time En Route:** ~{f['duration_mins']} mins")
+                st.markdown(f"**Altitude:** {f['altitude']} m | **Velocity:** {f['velocity']} m/s")
             with col_b:
-                # XAI Reasoning Breakdown
                 info = f["baseline"]
-                st.markdown("**Flight DNA Evaluation:**")
+                st.markdown("**Diagnostic Breakdown:**")
                 if not info["is_speed_normal"]:
-                    st.error(f"• Velocity anomaly! Speed ({f['velocity']} m/s) is outside normal bounds [{info['expected_min_speed']} - {info['expected_max_speed']} m/s].")
+                    st.error(f"• Velocity breach! Speed ({f['velocity']} m/s) severely outside limit [{info['expected_min_speed']} - {info['expected_max_speed']} m/s].")
                 if not info["is_vrate_normal"]:
-                    st.error(f"• Vertical rate anomaly! Climb/descent rate ({f['vertical_rate']} m/s) exceeds maximum safe threshold.")
-                st.info("💡 **AI Recommendation:** Flagged for secondary radar verification and transponder confirmation.")
+                    st.error(f"• Vertical rate breach! Climb/descent rate ({f['vertical_rate']} m/s) exceeds safe aerodynamic envelope.")
+                st.info("💡 **Recommended Action:** Priority transponder re-verification and immediate ATC contact.")
 else:
-    st.success("✅ All tracked targets in the current airspace grid are operating within normal Flight DNA parameters.")
+    st.success("✅ No critical airspace threats detected.")
+
+# SECTION 2: MINOR DEVIATIONS
+st.markdown("<p class='warning-header'>⚠️ Minor Operational Deviations</p>", unsafe_allow_html=True)
+
+if minor_flights:
+    for f in minor_flights:
+        with st.expander(f"🟡 MINOR DEVIATION: Flight {f['callsign']} - Operational Adjustment"):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.markdown(f"**Flight Phase:** {f['phase']}")
+                st.markdown(f"**Est. Distance Remaining:** {f['dist_km']} km")
+                st.markdown(f"**Est. Time En Route:** ~{f['duration_mins']} mins")
+                st.markdown(f"**Altitude:** {f['altitude']} m | **Velocity:** {f['velocity']} m/s")
+            with col_b:
+                info = f["baseline"]
+                st.markdown("**Diagnostic Breakdown:**")
+                if not info["is_speed_normal"]:
+                    st.warning(f"• Slight speed variation ({f['velocity']} m/s) vs target band [{info['expected_min_speed']} - {info['expected_max_speed']} m/s].")
+                if not info["is_vrate_normal"]:
+                    st.warning(f"• Minor vertical rate adjustment ({f['vertical_rate']} m/s).")
+                st.caption("ℹ️ **Status:** Likely standard vectoring or altitude holding pattern.")
+else:
+    st.info("ℹ️ No minor deviations reported in the active airspace grid.")

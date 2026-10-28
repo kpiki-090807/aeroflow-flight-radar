@@ -1,23 +1,45 @@
-# simulator.py - Anomaly Simulation Engine
+# simulator.py - Synthetic Anomaly Generator
 
-def inject_synthetic_anomaly(flight_data, anomaly_type="altitude_drop"):
+def get_simulated_flights(anomaly_type="None"):
     """
-    Injects synthetic flight anomalies into telemetry data for XAI testing.
-    Types: 'altitude_drop', 'speed_burst', 'vrate_spike'
+    Returns a list of simulated flights in the airspace grid,
+    with an optional injected anomaly for testing.
     """
-    simulated_flight = flight_data.copy()
-    
-    if anomaly_type == "altitude_drop":
-        simulated_flight["altitude"] = 1200  # Extreme sudden drop to unsafe low altitude
-        simulated_flight["vertical_rate"] = -45.0  # Dangerously rapid descent rate
-        simulated_flight["callsign"] = simulated_flight["callsign"] + "_SIM_DROP"
-        
-    elif anomaly_type == "speed_burst":
-        simulated_flight["velocity"] = 450.0  # Supersonic burst exceeding civilian limits
-        simulated_flight["callsign"] = simulated_flight["callsign"] + "_SIM_FAST"
-        
-    elif anomaly_type == "vrate_spike":
-        simulated_flight["vertical_rate"] = 55.0  # Unrealistic upward climb rate
-        simulated_flight["callsign"] = simulated_flight["callsign"] + "_SIM_CLIMB"
-        
-    return simulated_flight
+    # Default baseline sample flights
+    flights = [
+        {
+            "callsign": "AIC3KR",
+            "longitude": 78.4867,
+            "latitude": 17.3850,
+            "altitude": 10500.0,
+            "velocity": 240.0,
+            "vertical_rate": 0.0
+        },
+        {
+            "callsign": "VTXIC",
+            "longitude": 79.1000,
+            "latitude": 17.5000,
+            "altitude": 2500.0,
+            "velocity": 130.0,
+            "vertical_rate": -5.0
+        },
+        {
+            "callsign": "IGO6703",
+            "longitude": 78.0000,
+            "latitude": 17.2000,
+            "altitude": 9000.0,
+            "velocity": 220.0,
+            "vertical_rate": 0.5
+        }
+    ]
+
+    # Inject anomalies based on selection
+    if anomaly_type == "Altitude Drop":
+        flights[0]["altitude"] = 4000.0  # Sudden massive drop at cruise altitude
+        flights[0]["vertical_rate"] = -40.0 # Critical rapid descent rate
+    elif anomaly_type == "Speed Burst":
+        flights[0]["velocity"] = 380.0   # Extreme speed burst
+    elif anomaly_type == "Vertical Rate Spike":
+        flights[0]["vertical_rate"] = 35.0 # Dangerous upward climb rate spike
+
+    return flights
