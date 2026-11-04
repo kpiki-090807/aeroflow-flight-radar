@@ -22,7 +22,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('https://your-backend-url.onrender.com/api/telemetry');
+      const response = await fetch('https://aeroflow-flight-radar.onrender.com/api/telemetry');
       if (!response.ok) throw new Error('Failed to fetch from FastAPI backend');
       const data = await response.json();
       setTelemetry(data);
