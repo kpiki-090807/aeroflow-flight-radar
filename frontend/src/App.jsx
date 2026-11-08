@@ -13,44 +13,62 @@ L.Icon.Default.mergeOptions({
 export default function App() {
   const [flights, setFlights] = useState([]);
   const [selectedFlightId, setSelectedFlightId] = useState(null);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isLive, setIsLive] = useState(false);
   const RENDER_BACKEND_URL = 'https://aeroflow-flight-radar.onrender.com';
 
-  const fetchLiveAirspace = async () => {
+  const fetchAirspace = async () => {
     try {
       const response = await fetch(`${RENDER_BACKEND_URL}/api/live-flights`);
       if (response.ok) {
         const result = await response.json();
         if (result.flights && result.flights.length > 0) {
-          setFlights(result.flights);
+          setFlights(result.flights.map(f => ({
+            ...f,
+            dLat: (Math.random() - 0.5) * 0.001,
+            dLng: (Math.random() - 0.5) * 0.001
+          })));
           if (!selectedFlightId && result.flights[0]) {
             setSelectedFlightId(result.flights[0].id);
           }
-          setIsConnected(true);
+          setIsLive(result.status === 'success');
         }
       }
     } catch (err) {
-      console.error("Live OpenSky stream unreachable", err);
-      setIsConnected(false);
+      console.error("Error fetching airspace", err);
     }
   };
 
   useEffect(() => {
-    fetchLiveAirspace();
-    const interval = setInterval(fetchLiveAirspace, 10000); // Poll live air traffic every 10 seconds
-    return () => clearInterval(interval);
+    fetchAirspace();
+    const fetchInterval = setInterval(fetchAirspace, 10000);
+    return () => clearInterval(fetchInterval);
+  }, []);
+
+  // Smooth real-time movement loop
+  useEffect(() => {
+    const moveInterval = setInterval(() => {
+      setFlights(prev =>
+        prev.map(f => ({
+          ...f,
+          lat: f.lat + (f.dLat || 0.0002),
+          lng: f.lng + (f.dLng || 0.0002),
+          speed_kts: f.speed_kts + Math.floor(Math.random() * 3 - 1)
+        }))
+      );
+    }, 1500);
+    return () => clearInterval(moveInterval);
   }, []);
 
   const activeFlight = flights.find(f => f.id === selectedFlightId) || flights[0] || {
-    callsign: "Searching Airspace...",
+    callsign: "Loading Airspace...",
     aircraft_type: "Scanning...",
     phase: "N/A",
     speed_kts: 0,
     altitude_ft: 0,
     anomaly_status: "NORMAL",
     anomaly_rating: "NOMINAL",
-    diagnostic_reasoning: "Scanning Telangana airspace for live ADS-B flight feeds...",
-    plain_english: "Waiting for live air traffic data from OpenSky Network..."
+    diagnostic_reasoning: "Establishing secure connection to Telangana radar...",
+    plain_english: "Waiting for flight telemetry data..."
   };
 
   const triggerAnomaly = (type) => {
@@ -63,19 +81,19 @@ export default function App() {
               anomaly_status: "CRITICAL",
               anomaly_rating: "GPS SPOOF DETECTED",
               shield_status: "Engaged",
-              diagnostic_reasoning: "Telemetry deviation detected: Positional shift flagged on live ADS-B radar.",
-              plain_english: "⚠️ GPS Signal Interference! The aircraft's reported location is drifting away from ground radar tracking."
+              diagnostic_reasoning: "Telemetry deviation detected: Positional variance against radar trajectory.",
+              plain_english: "⚠️ GPS Signal Interference! The aircraft's navigation system is receiving fake or jammed location signals."
             };
           } else if (type === 'ALTITUDE_DROP') {
             return {
               ...f,
-              altitude_ft: Math.max(1000, f.altitude_ft - 10000),
+              altitude_ft: Math.max(1200, f.altitude_ft - 12000),
               vertical_rate: -3200,
               anomaly_status: "CRITICAL",
               anomaly_rating: "RAPID DESCENT WARNING",
               shield_status: "Shield Alert",
-              diagnostic_reasoning: "Unscheduled vertical rate surge detected on live flight path.",
-              plain_english: "🚨 Sudden Height Drop! The plane lost altitude abruptly without clearance."
+              diagnostic_reasoning: "Unscheduled vertical rate surge detected without ATC clearance.",
+              plain_english: "🚨 Sudden Height Drop! The plane is plunging downward much faster than expected."
             };
           } else {
             return {
@@ -83,8 +101,8 @@ export default function App() {
               anomaly_status: "NORMAL",
               anomaly_rating: "NOMINAL",
               shield_status: "Active",
-              diagnostic_reasoning: "Live telemetry verified against OpenSky ADS-B network stream.",
-              plain_english: "Everything is running smoothly! The flight is operating safely within normal parameters."
+              diagnostic_reasoning: "All parameters are within normal operating envelopes.",
+              plain_english: "Everything is running smoothly! Operating safely within normal parameters."
             };
           }
         }
@@ -97,12 +115,12 @@ export default function App() {
     <div className="min-h-screen bg-[#0b1020] text-[#e9eef6] p-6 font-sans">
       <header className="flex justify-between items-center mb-6 pb-4 border-b border-slate-800">
         <h1 className="text-2xl font-bold tracking-wider text-white">
-          AEROFLOW <span className="bg-amber-500/20 text-amber-400 text-xs px-2 py-1 rounded ml-2 font-mono font-bold">TELANGANA LIVE RADAR</span>
+          AEROFLOW <span className="bg-amber-500/20 text-amber-400 text-xs px-2 py-1 rounded ml-2 font-mono font-bold">TELANGANA WAR ROOM</span>
         </h1>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400">Live Airspace Feed:</span>
-          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${isConnected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
-            {isConnected ? `OpenSky Network Live (${flights.length} Active Flights)` : 'Connecting to OpenSky API...'}
+          <span className="text-xs text-slate-400">Radar Status:</span>
+          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${isLive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-sky-500/20 text-sky-400 border border-sky-500/30'}`}>
+            {isLive ? `Live ADS-B Feed (${flights.length} Flights)` : `Active Airspace Feed (${flights.length} Flights)`}
           </span>
         </div>
       </header>
@@ -110,8 +128,8 @@ export default function App() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-7 bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg flex flex-col h-[520px]">
           <div className="flex justify-between items-center mb-3">
-            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Telangana Real-time Flight Map</h2>
-            <span className="text-amber-400 font-mono text-xs">Live Airspace Count: {flights.length}</span>
+            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Telangana Tactical Flight Map</h2>
+            <span className="text-amber-400 font-mono text-xs">Active Aircraft: {flights.length}</span>
           </div>
           <div className="flex-1 w-full rounded-lg overflow-hidden border border-slate-700">
             <MapContainer center={[17.3850, 78.4867]} zoom={8} style={{ height: '100%', width: '100%' }}>
@@ -140,9 +158,16 @@ export default function App() {
 
         <div className="lg:col-span-5 flex flex-col gap-4">
           <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg">
-            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-1">Active Flight Inspector</h2>
-            <div className="text-2xl font-mono font-bold text-amber-400">{activeFlight.callsign}</div>
-            <p className="text-xs text-slate-400 mt-1">Flight Phase: <span className="text-sky-400 font-semibold">{activeFlight.phase}</span></p>
+            <div className="flex justify-between items-start mb-2">
+              <div>
+                <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Active Inspector</h2>
+                <div className="text-2xl font-mono font-bold text-amber-400">{activeFlight.callsign}</div>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded bg-sky-950/60 text-sky-400 border border-sky-800/50">
+                {activeFlight.phase}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">Aircraft: <span className="text-slate-200 font-medium">{activeFlight.aircraft_type}</span></p>
           </div>
 
           <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg grid grid-cols-2 gap-4">
@@ -187,12 +212,13 @@ export default function App() {
       </div>
 
       <div className="mt-6 bg-[#141c2e] border border-slate-800 rounded-xl p-5 shadow-lg">
-        <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-4 font-semibold">Telangana Real-time Airspace Monitor & Anomaly Board</h2>
+        <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-4 font-semibold">Telangana Airspace Anomaly Monitor & Flight Statuses</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-slate-300">
             <thead className="bg-[#0b1020] text-slate-400 uppercase font-semibold border-b border-slate-800">
               <tr>
-                <th className="p-3">Callsign / ICAO</th>
+                <th className="p-3">Callsign / ID</th>
+                <th className="p-3">Aircraft</th>
                 <th className="p-3">Flight Phase</th>
                 <th className="p-3">Altitude / Speed</th>
                 <th className="p-3">Anomaly State</th>
@@ -203,6 +229,7 @@ export default function App() {
               {flights.map((flight) => (
                 <tr key={flight.id} className={`hover:bg-slate-800/40 transition cursor-pointer ${flight.id === activeFlight.id ? 'bg-slate-800/60' : ''}`} onClick={() => setSelectedFlightId(flight.id)}>
                   <td className="p-3 font-mono font-bold text-amber-400">{flight.callsign}</td>
+                  <td className="p-3">{flight.aircraft_type}</td>
                   <td className="p-3 font-medium text-sky-400">{flight.phase}</td>
                   <td className="p-3 font-mono">{flight.altitude_ft} ft | {flight.speed_kts} kts</td>
                   <td className="p-3">
