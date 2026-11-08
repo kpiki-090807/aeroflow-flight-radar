@@ -93,7 +93,7 @@ export default function App() {
   const activeFlight = flights.find(f => f.id === selectedFlightId) || flights[0];
   const RENDER_BACKEND_URL = 'https://aeroflow-flight-radar.onrender.com';
 
-  // Live Position Movement Loop (Updates plane coordinates every 1.5 seconds)
+  // Live Position Movement Loop
   useEffect(() => {
     const moveInterval = setInterval(() => {
       setFlights(prevFlights =>
@@ -101,7 +101,6 @@ export default function App() {
           ...f,
           lat: f.lat + f.dLat,
           lng: f.lng + f.dLng,
-          // Slightly fluctuate speed and altitude for realism
           speed_kts: f.speed_kts + Math.floor(Math.random() * 3 - 1)
         }))
       );
@@ -172,9 +171,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0b1020] text-[#e9eef6] p-6 font-sans">
+      {/* Header */}
       <header className="flex justify-between items-center mb-6 pb-4 border-b border-slate-800">
         <h1 className="text-2xl font-bold tracking-wider text-white">
-          AEROFLOW <span className="bg-amber-500/20 text-amber-400 text-xs px-2 py-1 rounded ml-2 font-mono font-bold">LIVE RADAR</span>
+          AEROFLOW <span className="bg-amber-500/20 text-amber-400 text-xs px-2 py-1 rounded ml-2 font-mono font-bold">OPERATIONS CONTROL CENTER</span>
         </h1>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-400">Status:</span>
@@ -184,11 +184,14 @@ export default function App() {
         </div>
       </header>
 
+      {/* Main Grid: Map & Inspector */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Tactical Map */}
         <div className="lg:col-span-7 bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg flex flex-col h-[520px]">
           <div className="flex justify-between items-center mb-3">
-            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tactical Flight Map (Real-time trajectory tracking)</h2>
-            <span className="text-amber-400 font-mono text-xs">Active Trackers: {flights.length}</span>
+            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tactical Flight Map (Click any pin to inspect)</h2>
+            <span className="text-amber-400 font-mono text-xs">Tracked Aircraft: {flights.length}</span>
           </div>
           <div className="flex-1 w-full rounded-lg overflow-hidden border border-slate-700">
             <MapContainer center={[17.3850, 78.4867]} zoom={10} style={{ height: '100%', width: '100%' }}>
@@ -223,6 +226,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* Selected Flight Inspector */}
         <div className="lg:col-span-5 flex flex-col gap-4">
           <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg">
             <div className="flex justify-between items-start mb-2">
@@ -263,6 +267,7 @@ export default function App() {
         </div>
       </div>
 
+      {/* Interactive Anomaly Injection Controls */}
       <div className="mt-6 bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg">
         <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-3 font-semibold">
           Anomaly Injection Controls (Target: <span className="text-amber-400">{activeFlight.id}</span>)
@@ -286,6 +291,55 @@ export default function App() {
           >
             Reset Flight Telemetry
           </button>
+        </div>
+      </div>
+
+      {/* Airspace Anomaly Monitor Dashboard Table */}
+      <div className="mt-6 bg-[#141c2e] border border-slate-800 rounded-xl p-5 shadow-lg">
+        <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-4 font-semibold">Airspace Anomaly Monitor & Flight Statuses</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="bg-[#0b1020] text-slate-400 uppercase font-semibold border-b border-slate-800">
+              <tr>
+                <th className="p-3">Flight ID</th>
+                <th className="p-3">Aircraft</th>
+                <th className="p-3">Flight Phase</th>
+                <th className="p-3">Altitude / Speed</th>
+                <th className="p-3">Anomaly State</th>
+                <th className="p-3">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60">
+              {flights.map((flight) => (
+                <tr
+                  key={flight.id}
+                  className={`hover:bg-slate-800/40 transition cursor-pointer ${flight.id === selectedFlightId ? 'bg-slate-800/60' : ''}`}
+                  onClick={() => setSelectedFlightId(flight.id)}
+                >
+                  <td className="p-3 font-mono font-bold text-amber-400">{flight.callsign}</td>
+                  <td className="p-3">{flight.aircraft_type}</td>
+                  <td className="p-3 font-medium text-sky-400">{flight.phase}</td>
+                  <td className="p-3 font-mono">{flight.altitude_ft} ft | {flight.speed_kts} kts</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-1 rounded font-bold text-[10px] ${flight.anomaly_status === 'CRITICAL' ? 'bg-red-600/30 text-red-400 border border-red-500/50' : 'bg-emerald-600/30 text-emerald-400 border border-emerald-500/50'}`}>
+                      {flight.anomaly_status}: {flight.anomaly_rating}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedFlightId(flight.id);
+                      }}
+                      className="text-xs text-amber-400 underline hover:text-amber-300"
+                    >
+                      Inspect
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
