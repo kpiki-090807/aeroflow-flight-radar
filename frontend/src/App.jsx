@@ -27,7 +27,9 @@ export default function App() {
       diagnostic_reasoning: "All parameters are within normal cruise operating envelopes.",
       plain_english: "Everything is running smoothly! The flight is cruising safely with normal speed, altitude, and direction.",
       lat: 17.3850,
-      lng: 78.4867
+      lng: 78.4867,
+      dLat: 0.0008,
+      dLng: 0.0005
     },
     {
       id: "6E-214",
@@ -41,9 +43,11 @@ export default function App() {
       anomaly_rating: "GPS SPOOF DETECTED",
       shield_status: "Engaged",
       diagnostic_reasoning: "Telemetry deviation detected: High positional variance against radar trajectory.",
-      plain_english: "⚠️ GPS Signal Interference! The airplane's navigation system is receiving fake or jammed location signals, making it hard to trust where the plane thinks it is compared to ground radar.",
+      plain_english: "⚠️ GPS Signal Interference! The airplane's navigation system is receiving fake or jammed location signals.",
       lat: 17.4500,
-      lng: 78.3800
+      lng: 78.3800,
+      dLat: -0.0005,
+      dLng: 0.0007
     },
     {
       id: "UK-881",
@@ -59,7 +63,9 @@ export default function App() {
       diagnostic_reasoning: "Nominal climb gradient maintained without trajectory conflict.",
       plain_english: "Everything is working correctly. The aircraft is taking off smoothly on its assigned climbing path.",
       lat: 17.2400,
-      lng: 78.4290
+      lng: 78.4290,
+      dLat: 0.0006,
+      dLng: -0.0006
     },
     {
       id: "SG-342",
@@ -73,9 +79,11 @@ export default function App() {
       anomaly_rating: "RAPID DESCENT WARNING",
       shield_status: "Shield Alert",
       diagnostic_reasoning: "Unscheduled vertical rate surge detected without ATC descent clearance.",
-      plain_english: "🚨 Sudden Height Drop! The plane is losing altitude much faster than normal without permission from air traffic control. This requires immediate attention.",
+      plain_english: "🚨 Sudden Height Drop! The plane is losing altitude much faster than normal without permission.",
       lat: 17.5200,
-      lng: 78.5800
+      lng: 78.5800,
+      dLat: -0.0007,
+      dLng: -0.0004
     }
   ]);
 
@@ -85,14 +93,27 @@ export default function App() {
   const activeFlight = flights.find(f => f.id === selectedFlightId) || flights[0];
   const RENDER_BACKEND_URL = 'https://aeroflow-flight-radar.onrender.com';
 
+  // Live Position Movement Loop (Updates plane coordinates every 1.5 seconds)
+  useEffect(() => {
+    const moveInterval = setInterval(() => {
+      setFlights(prevFlights =>
+        prevFlights.map(f => ({
+          ...f,
+          lat: f.lat + f.dLat,
+          lng: f.lng + f.dLng,
+          // Slightly fluctuate speed and altitude for realism
+          speed_kts: f.speed_kts + Math.floor(Math.random() * 3 - 1)
+        }))
+      );
+    }, 1500);
+
+    return () => clearInterval(moveInterval);
+  }, []);
+
   const fetchBackendTelemetry = async () => {
     try {
       const response = await fetch(`${RENDER_BACKEND_URL}/api/telemetry`);
       if (response.ok) {
-        const data = await response.json();
-        setFlights(prevFlights =>
-          prevFlights.map(f => f.id === "AI-784" ? { ...f, ...data } : f)
-        );
         setIsConnected(true);
       }
     } catch (err) {
@@ -102,7 +123,7 @@ export default function App() {
 
   useEffect(() => {
     fetchBackendTelemetry();
-    const interval = setInterval(fetchBackendTelemetry, 3000);
+    const interval = setInterval(fetchBackendTelemetry, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -117,7 +138,7 @@ export default function App() {
               anomaly_rating: "GPS SPOOF DETECTED",
               shield_status: "Engaged",
               diagnostic_reasoning: "Telemetry deviation detected: High positional variance against radar trajectory.",
-              plain_english: "⚠️ GPS Signal Interference! The airplane's navigation system is receiving fake or jammed location signals, making it hard to trust where the plane thinks it is."
+              plain_english: "⚠️ GPS Signal Interference! The airplane's navigation system is receiving fake or jammed location signals."
             };
           } else if (type === 'ALTITUDE_DROP') {
             return {
@@ -128,7 +149,7 @@ export default function App() {
               anomaly_rating: "RAPID DESCENT WARNING",
               shield_status: "Shield Alert",
               diagnostic_reasoning: "Unscheduled vertical rate surge detected without ATC descent clearance.",
-              plain_english: "🚨 Sudden Height Drop! The plane is plunging downward much faster than expected without any clearance from air traffic control."
+              plain_english: "🚨 Sudden Height Drop! The plane is plunging downward much faster than expected."
             };
           } else {
             return {
@@ -151,13 +172,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0b1020] text-[#e9eef6] p-6 font-sans">
-      {/* Top Header */}
       <header className="flex justify-between items-center mb-6 pb-4 border-b border-slate-800">
-        <div>
-          <h1 className="text-2xl font-bold tracking-wider text-white">
-            AEROFLOW <span className="bg-amber-500/20 text-amber-400 text-xs px-2 py-1 rounded ml-2 font-mono">OPERATIONS CONTROL CENTER</span>
-          </h1>
-        </div>
+        <h1 className="text-2xl font-bold tracking-wider text-white">
+          AEROFLOW <span className="bg-amber-500/20 text-amber-400 text-xs px-2 py-1 rounded ml-2 font-mono font-bold">LIVE RADAR</span>
+        </h1>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-400">Status:</span>
           <span className={`text-xs font-semibold px-3 py-1 rounded-full ${isConnected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
@@ -166,19 +184,16 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Grid: Map & Active Inspector */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Tactical Map */}
         <div className="lg:col-span-7 bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg flex flex-col h-[520px]">
           <div className="flex justify-between items-center mb-3">
-            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tactical Flight Map (Click any flight pin to inspect)</h2>
-            <span className="text-amber-400 font-mono text-xs">Tracked Aircraft: {flights.length}</span>
+            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tactical Flight Map (Real-time trajectory tracking)</h2>
+            <span className="text-amber-400 font-mono text-xs">Active Trackers: {flights.length}</span>
           </div>
           <div className="flex-1 w-full rounded-lg overflow-hidden border border-slate-700">
             <MapContainer center={[17.3850, 78.4867]} zoom={10} style={{ height: '100%', width: '100%' }}>
               <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                attribution='&copy; OpenStreetMap'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
               {flights.map((flight) => (
@@ -208,10 +223,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Selected Flight Inspector & Explanations */}
         <div className="lg:col-span-5 flex flex-col gap-4">
-          
-          {/* Flight Header */}
           <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg">
             <div className="flex justify-between items-start mb-2">
               <div>
@@ -225,7 +237,6 @@ export default function App() {
             <p className="text-xs text-slate-400">Aircraft: <span className="text-slate-200 font-medium">{activeFlight.aircraft_type}</span></p>
           </div>
 
-          {/* Telemetry Metrics */}
           <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-slate-400">Airspeed</p>
@@ -237,14 +248,11 @@ export default function App() {
             </div>
           </div>
 
-          {/* XAI Anomaly & Plain English Explanation Cards */}
           <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg">
             <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-2 font-semibold">XAI Anomaly Diagnostics</h2>
             <div className={`p-2.5 rounded-lg text-center font-bold text-xs tracking-wide transition-all ${activeFlight.anomaly_status === 'CRITICAL' ? 'bg-red-600/90 text-white animate-pulse' : 'bg-emerald-600/90 text-white'}`}>
               {activeFlight.anomaly_status === 'CRITICAL' ? `CRITICAL: ${activeFlight.anomaly_rating}` : 'NORMAL: NOMINAL'}
             </div>
-            
-            {/* Plain English Layman Explanation */}
             <div className="mt-3 bg-indigo-950/40 border border-indigo-500/30 p-3 rounded-lg">
               <p className="text-[11px] uppercase tracking-wider text-indigo-300 font-bold mb-1">💡 What This Means in Plain English</p>
               <p className="text-xs text-slate-200 leading-relaxed">
@@ -252,12 +260,9 @@ export default function App() {
               </p>
             </div>
           </div>
-
         </div>
-
       </div>
 
-      {/* Interactive Anomaly Injection Controls */}
       <div className="mt-6 bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg">
         <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-3 font-semibold">
           Anomaly Injection Controls (Target: <span className="text-amber-400">{activeFlight.id}</span>)
@@ -281,55 +286,6 @@ export default function App() {
           >
             Reset Flight Telemetry
           </button>
-        </div>
-      </div>
-
-      {/* Airspace Monitor Table */}
-      <div className="mt-6 bg-[#141c2e] border border-slate-800 rounded-xl p-5 shadow-lg">
-        <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-4 font-semibold">Airspace Anomaly Monitor & Flight Statuses</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-[#0b1020] text-slate-400 uppercase font-semibold border-b border-slate-800">
-              <tr>
-                <th className="p-3">Flight ID</th>
-                <th className="p-3">Aircraft</th>
-                <th className="p-3">Flight Phase</th>
-                <th className="p-3">Altitude / Speed</th>
-                <th className="p-3">Anomaly State</th>
-                <th className="p-3">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60">
-              {flights.map((flight) => (
-                <tr
-                  key={flight.id}
-                  className={`hover:bg-slate-800/40 transition cursor-pointer ${flight.id === selectedFlightId ? 'bg-slate-800/60' : ''}`}
-                  onClick={() => setSelectedFlightId(flight.id)}
-                >
-                  <td className="p-3 font-mono font-bold text-amber-400">{flight.callsign}</td>
-                  <td className="p-3">{flight.aircraft_type}</td>
-                  <td className="p-3 font-medium text-sky-400">{flight.phase}</td>
-                  <td className="p-3 font-mono">{flight.altitude_ft} ft | {flight.speed_kts} kts</td>
-                  <td className="p-3">
-                    <span className={`px-2 py-1 rounded font-bold text-[10px] ${flight.anomaly_status === 'CRITICAL' ? 'bg-red-600/30 text-red-400 border border-red-500/50' : 'bg-emerald-600/30 text-emerald-400 border border-emerald-500/50'}`}>
-                      {flight.anomaly_status}: {flight.anomaly_rating}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedFlightId(flight.id);
-                      }}
-                      className="text-xs text-amber-400 underline hover:text-amber-300"
-                    >
-                      Inspect
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       </div>
     </div>
