@@ -3,7 +3,6 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-// Fix default marker icons in React Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -12,154 +11,79 @@ L.Icon.Default.mergeOptions({
 });
 
 export default function App() {
-  const [flights, setFlights] = useState([
-    {
-      id: "AI-784",
-      callsign: "Air India AI-784",
-      aircraft_type: "Boeing 737-800",
-      phase: "Approaching",
-      speed_kts: 450,
-      altitude_ft: 32000,
-      vertical_rate: 0,
-      anomaly_status: "NORMAL",
-      anomaly_rating: "NOMINAL",
-      shield_status: "Active",
-      diagnostic_reasoning: "All parameters are within normal cruise operating envelopes.",
-      plain_english: "Everything is running smoothly! The flight is cruising safely with normal speed, altitude, and direction.",
-      lat: 17.3850,
-      lng: 78.4867,
-      dLat: 0.0008,
-      dLng: 0.0005
-    },
-    {
-      id: "6E-214",
-      callsign: "IndiGo 6E-214",
-      aircraft_type: "Airbus A320neo",
-      phase: "Landing",
-      speed_kts: 140,
-      altitude_ft: 1200,
-      vertical_rate: -700,
-      anomaly_status: "CRITICAL",
-      anomaly_rating: "GPS SPOOF DETECTED",
-      shield_status: "Engaged",
-      diagnostic_reasoning: "Telemetry deviation detected: High positional variance against radar trajectory.",
-      plain_english: "⚠️ GPS Signal Interference! The airplane's navigation system is receiving fake or jammed location signals.",
-      lat: 17.4500,
-      lng: 78.3800,
-      dLat: -0.0005,
-      dLng: 0.0007
-    },
-    {
-      id: "UK-881",
-      callsign: "Vistara UK-881",
-      aircraft_type: "Airbus A321neo",
-      phase: "Takeoff",
-      speed_kts: 210,
-      altitude_ft: 3500,
-      vertical_rate: +1800,
-      anomaly_status: "NORMAL",
-      anomaly_rating: "NOMINAL",
-      shield_status: "Active",
-      diagnostic_reasoning: "Nominal climb gradient maintained without trajectory conflict.",
-      plain_english: "Everything is working correctly. The aircraft is taking off smoothly on its assigned climbing path.",
-      lat: 17.2400,
-      lng: 78.4290,
-      dLat: 0.0006,
-      dLng: -0.0006
-    },
-    {
-      id: "SG-342",
-      callsign: "SpiceJet SG-342",
-      aircraft_type: "Boeing 737-MAX",
-      phase: "Cruise",
-      speed_kts: 420,
-      altitude_ft: 18000,
-      vertical_rate: -2500,
-      anomaly_status: "CRITICAL",
-      anomaly_rating: "RAPID DESCENT WARNING",
-      shield_status: "Shield Alert",
-      diagnostic_reasoning: "Unscheduled vertical rate surge detected without ATC descent clearance.",
-      plain_english: "🚨 Sudden Height Drop! The plane is losing altitude much faster than normal without permission.",
-      lat: 17.5200,
-      lng: 78.5800,
-      dLat: -0.0007,
-      dLng: -0.0004
-    }
-  ]);
-
-  const [selectedFlightId, setSelectedFlightId] = useState("AI-784");
+  const [flights, setFlights] = useState([]);
+  const [selectedFlightId, setSelectedFlightId] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
-
-  const activeFlight = flights.find(f => f.id === selectedFlightId) || flights[0];
   const RENDER_BACKEND_URL = 'https://aeroflow-flight-radar.onrender.com';
 
-  // Live Position Movement Loop
-  useEffect(() => {
-    const moveInterval = setInterval(() => {
-      setFlights(prevFlights =>
-        prevFlights.map(f => ({
-          ...f,
-          lat: f.lat + f.dLat,
-          lng: f.lng + f.dLng,
-          speed_kts: f.speed_kts + Math.floor(Math.random() * 3 - 1)
-        }))
-      );
-    }, 1500);
-
-    return () => clearInterval(moveInterval);
-  }, []);
-
-  const fetchBackendTelemetry = async () => {
+  const fetchLiveAirspace = async () => {
     try {
-      const response = await fetch(`${RENDER_BACKEND_URL}/api/telemetry`);
+      const response = await fetch(`${RENDER_BACKEND_URL}/api/live-flights`);
       if (response.ok) {
-        setIsConnected(true);
+        const result = await response.json();
+        if (result.flights && result.flights.length > 0) {
+          setFlights(result.flights);
+          if (!selectedFlightId && result.flights[0]) {
+            setSelectedFlightId(result.flights[0].id);
+          }
+          setIsConnected(true);
+        }
       }
     } catch (err) {
+      console.error("Live OpenSky stream unreachable", err);
       setIsConnected(false);
     }
   };
 
   useEffect(() => {
-    fetchBackendTelemetry();
-    const interval = setInterval(fetchBackendTelemetry, 5000);
+    fetchLiveAirspace();
+    const interval = setInterval(fetchLiveAirspace, 10000); // Poll live air traffic every 10 seconds
     return () => clearInterval(interval);
   }, []);
+
+  const activeFlight = flights.find(f => f.id === selectedFlightId) || flights[0] || {
+    callsign: "Searching Airspace...",
+    aircraft_type: "Scanning...",
+    phase: "N/A",
+    speed_kts: 0,
+    altitude_ft: 0,
+    anomaly_status: "NORMAL",
+    anomaly_rating: "NOMINAL",
+    diagnostic_reasoning: "Scanning Telangana airspace for live ADS-B flight feeds...",
+    plain_english: "Waiting for live air traffic data from OpenSky Network..."
+  };
 
   const triggerAnomaly = (type) => {
     setFlights(prev =>
       prev.map(f => {
-        if (f.id === selectedFlightId) {
+        if (f.id === activeFlight.id) {
           if (type === 'GPS_SPOOF') {
             return {
               ...f,
               anomaly_status: "CRITICAL",
               anomaly_rating: "GPS SPOOF DETECTED",
               shield_status: "Engaged",
-              diagnostic_reasoning: "Telemetry deviation detected: High positional variance against radar trajectory.",
-              plain_english: "⚠️ GPS Signal Interference! The airplane's navigation system is receiving fake or jammed location signals."
+              diagnostic_reasoning: "Telemetry deviation detected: Positional shift flagged on live ADS-B radar.",
+              plain_english: "⚠️ GPS Signal Interference! The aircraft's reported location is drifting away from ground radar tracking."
             };
           } else if (type === 'ALTITUDE_DROP') {
             return {
               ...f,
-              altitude_ft: 14000,
+              altitude_ft: Math.max(1000, f.altitude_ft - 10000),
               vertical_rate: -3200,
               anomaly_status: "CRITICAL",
               anomaly_rating: "RAPID DESCENT WARNING",
               shield_status: "Shield Alert",
-              diagnostic_reasoning: "Unscheduled vertical rate surge detected without ATC descent clearance.",
-              plain_english: "🚨 Sudden Height Drop! The plane is plunging downward much faster than expected."
+              diagnostic_reasoning: "Unscheduled vertical rate surge detected on live flight path.",
+              plain_english: "🚨 Sudden Height Drop! The plane lost altitude abruptly without clearance."
             };
           } else {
             return {
               ...f,
-              altitude_ft: 32000,
-              speed_kts: 450,
-              vertical_rate: 0,
               anomaly_status: "NORMAL",
               anomaly_rating: "NOMINAL",
               shield_status: "Active",
-              diagnostic_reasoning: "All parameters are within normal cruise operating envelopes.",
+              diagnostic_reasoning: "Live telemetry verified against OpenSky ADS-B network stream.",
               plain_english: "Everything is running smoothly! The flight is operating safely within normal parameters."
             };
           }
@@ -171,51 +95,39 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0b1020] text-[#e9eef6] p-6 font-sans">
-      {/* Header */}
       <header className="flex justify-between items-center mb-6 pb-4 border-b border-slate-800">
         <h1 className="text-2xl font-bold tracking-wider text-white">
-          AEROFLOW <span className="bg-amber-500/20 text-amber-400 text-xs px-2 py-1 rounded ml-2 font-mono font-bold">OPERATIONS CONTROL CENTER</span>
+          AEROFLOW <span className="bg-amber-500/20 text-amber-400 text-xs px-2 py-1 rounded ml-2 font-mono font-bold">TELANGANA LIVE RADAR</span>
         </h1>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400">Status:</span>
+          <span className="text-xs text-slate-400">Live Airspace Feed:</span>
           <span className={`text-xs font-semibold px-3 py-1 rounded-full ${isConnected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
-            {isConnected ? 'FastAPI Connected' : 'Simulated Telemetry Mode'}
+            {isConnected ? `OpenSky Network Live (${flights.length} Active Flights)` : 'Connecting to OpenSky API...'}
           </span>
         </div>
       </header>
 
-      {/* Main Grid: Map & Inspector */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Tactical Map */}
         <div className="lg:col-span-7 bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg flex flex-col h-[520px]">
           <div className="flex justify-between items-center mb-3">
-            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tactical Flight Map (Click any pin to inspect)</h2>
-            <span className="text-amber-400 font-mono text-xs">Tracked Aircraft: {flights.length}</span>
+            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Telangana Real-time Flight Map</h2>
+            <span className="text-amber-400 font-mono text-xs">Live Airspace Count: {flights.length}</span>
           </div>
           <div className="flex-1 w-full rounded-lg overflow-hidden border border-slate-700">
-            <MapContainer center={[17.3850, 78.4867]} zoom={10} style={{ height: '100%', width: '100%' }}>
-              <TileLayer
-                attribution='&copy; OpenStreetMap'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
+            <MapContainer center={[17.3850, 78.4867]} zoom={8} style={{ height: '100%', width: '100%' }}>
+              <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               {flights.map((flight) => (
                 <Marker
                   key={flight.id}
                   position={[flight.lat, flight.lng]}
-                  eventHandlers={{
-                    click: () => setSelectedFlightId(flight.id)
-                  }}
+                  eventHandlers={{ click: () => setSelectedFlightId(flight.id) }}
                 >
                   <Popup>
                     <div className="text-slate-900 font-sans">
                       <p className="font-bold">{flight.callsign}</p>
                       <p className="text-xs">Phase: {flight.phase}</p>
-                      <p className="text-xs">Status: <b className={flight.anomaly_status === 'CRITICAL' ? 'text-red-600' : 'text-green-600'}>{flight.anomaly_status}</b></p>
-                      <button
-                        onClick={() => setSelectedFlightId(flight.id)}
-                        className="mt-2 text-xs bg-slate-800 text-white px-2 py-1 rounded w-full"
-                      >
+                      <p className="text-xs">Alt: {flight.altitude_ft} ft | Speed: {flight.speed_kts} kts</p>
+                      <button onClick={() => setSelectedFlightId(flight.id)} className="mt-2 text-xs bg-slate-800 text-white px-2 py-1 rounded w-full">
                         Inspect Telemetry
                       </button>
                     </div>
@@ -226,19 +138,11 @@ export default function App() {
           </div>
         </div>
 
-        {/* Selected Flight Inspector */}
         <div className="lg:col-span-5 flex flex-col gap-4">
           <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg">
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Active Inspector</h2>
-                <div className="text-2xl font-mono font-bold text-amber-400">{activeFlight.callsign}</div>
-              </div>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded bg-sky-950/60 text-sky-400 border border-sky-800/50">
-                {activeFlight.phase}
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">Aircraft: <span className="text-slate-200 font-medium">{activeFlight.aircraft_type}</span></p>
+            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-1">Active Flight Inspector</h2>
+            <div className="text-2xl font-mono font-bold text-amber-400">{activeFlight.callsign}</div>
+            <p className="text-xs text-slate-400 mt-1">Flight Phase: <span className="text-sky-400 font-semibold">{activeFlight.phase}</span></p>
           </div>
 
           <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg grid grid-cols-2 gap-4">
@@ -259,50 +163,36 @@ export default function App() {
             </div>
             <div className="mt-3 bg-indigo-950/40 border border-indigo-500/30 p-3 rounded-lg">
               <p className="text-[11px] uppercase tracking-wider text-indigo-300 font-bold mb-1">💡 What This Means in Plain English</p>
-              <p className="text-xs text-slate-200 leading-relaxed">
-                {activeFlight.plain_english}
-              </p>
+              <p className="text-xs text-slate-200 leading-relaxed">{activeFlight.plain_english}</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Interactive Anomaly Injection Controls */}
       <div className="mt-6 bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg">
         <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-3 font-semibold">
-          Anomaly Injection Controls (Target: <span className="text-amber-400">{activeFlight.id}</span>)
+          Anomaly Injection Controls (Target: <span className="text-amber-400">{activeFlight.callsign}</span>)
         </h2>
         <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => triggerAnomaly('GPS_SPOOF')}
-            className="px-4 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/40 rounded text-xs font-semibold transition"
-          >
+          <button onClick={() => triggerAnomaly('GPS_SPOOF')} className="px-4 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/40 rounded text-xs font-semibold">
             Inject GPS Spoofing Anomaly
           </button>
-          <button
-            onClick={() => triggerAnomaly('ALTITUDE_DROP')}
-            className="px-4 py-2 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 border border-amber-500/40 rounded text-xs font-semibold transition"
-          >
+          <button onClick={() => triggerAnomaly('ALTITUDE_DROP')} className="px-4 py-2 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 border border-amber-500/40 rounded text-xs font-semibold">
             Inject Altitude Drop Anomaly
           </button>
-          <button
-            onClick={() => triggerAnomaly('RESET')}
-            className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded text-xs font-semibold transition"
-          >
+          <button onClick={() => triggerAnomaly('RESET')} className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded text-xs font-semibold">
             Reset Flight Telemetry
           </button>
         </div>
       </div>
 
-      {/* Airspace Anomaly Monitor Dashboard Table */}
       <div className="mt-6 bg-[#141c2e] border border-slate-800 rounded-xl p-5 shadow-lg">
-        <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-4 font-semibold">Airspace Anomaly Monitor & Flight Statuses</h2>
+        <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-4 font-semibold">Telangana Real-time Airspace Monitor & Anomaly Board</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-slate-300">
             <thead className="bg-[#0b1020] text-slate-400 uppercase font-semibold border-b border-slate-800">
               <tr>
-                <th className="p-3">Flight ID</th>
-                <th className="p-3">Aircraft</th>
+                <th className="p-3">Callsign / ICAO</th>
                 <th className="p-3">Flight Phase</th>
                 <th className="p-3">Altitude / Speed</th>
                 <th className="p-3">Anomaly State</th>
@@ -311,13 +201,8 @@ export default function App() {
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {flights.map((flight) => (
-                <tr
-                  key={flight.id}
-                  className={`hover:bg-slate-800/40 transition cursor-pointer ${flight.id === selectedFlightId ? 'bg-slate-800/60' : ''}`}
-                  onClick={() => setSelectedFlightId(flight.id)}
-                >
+                <tr key={flight.id} className={`hover:bg-slate-800/40 transition cursor-pointer ${flight.id === activeFlight.id ? 'bg-slate-800/60' : ''}`} onClick={() => setSelectedFlightId(flight.id)}>
                   <td className="p-3 font-mono font-bold text-amber-400">{flight.callsign}</td>
-                  <td className="p-3">{flight.aircraft_type}</td>
                   <td className="p-3 font-medium text-sky-400">{flight.phase}</td>
                   <td className="p-3 font-mono">{flight.altitude_ft} ft | {flight.speed_kts} kts</td>
                   <td className="p-3">
@@ -326,13 +211,7 @@ export default function App() {
                     </span>
                   </td>
                   <td className="p-3">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedFlightId(flight.id);
-                      }}
-                      className="text-xs text-amber-400 underline hover:text-amber-300"
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); setSelectedFlightId(flight.id); }} className="text-xs text-amber-400 underline hover:text-amber-300">
                       Inspect
                     </button>
                   </td>
