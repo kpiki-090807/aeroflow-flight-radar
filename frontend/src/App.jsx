@@ -10,41 +10,105 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
+// Immediate initial fleet data for instant loading
+const DEFAULT_FLEET = [
+  {
+    id: "AI-784",
+    callsign: "Air India AI-784",
+    aircraft_type: "Boeing 737-800",
+    phase: "Approaching",
+    speed_kts: 450,
+    altitude_ft: 32000,
+    vertical_rate: 0,
+    anomaly_status: "NORMAL",
+    anomaly_rating: "NOMINAL",
+    shield_status: "Active",
+    diagnostic_reasoning: "All parameters are within normal cruise operating envelopes.",
+    plain_english: "Everything is running smoothly! Cruising safely towards Hyderabad.",
+    lat: 17.3850,
+    lng: 78.4867,
+    dLat: 0.0004,
+    dLng: 0.0003
+  },
+  {
+    id: "6E-214",
+    callsign: "IndiGo 6E-214",
+    aircraft_type: "Airbus A320neo",
+    phase: "Landing",
+    speed_kts: 140,
+    altitude_ft: 1200,
+    vertical_rate: -700,
+    anomaly_status: "CRITICAL",
+    anomaly_rating: "GPS SPOOF DETECTED",
+    shield_status: "Engaged",
+    diagnostic_reasoning: "Telemetry deviation detected: High positional variance against radar trajectory.",
+    plain_english: "⚠️ GPS Signal Interference! The aircraft's navigation system is receiving fake or jammed location signals.",
+    lat: 17.4500,
+    lng: 78.3800,
+    dLat: -0.0003,
+    dLng: 0.0005
+  },
+  {
+    id: "UK-881",
+    callsign: "Vistara UK-881",
+    aircraft_type: "Airbus A321neo",
+    phase: "Takeoff",
+    speed_kts: 210,
+    altitude_ft: 3500,
+    vertical_rate: 1800,
+    anomaly_status: "NORMAL",
+    anomaly_rating: "NOMINAL",
+    shield_status: "Active",
+    diagnostic_reasoning: "Nominal climb gradient maintained without trajectory conflict.",
+    plain_english: "Aircraft is taking off smoothly on its assigned climbing path.",
+    lat: 17.2400,
+    lng: 78.4290,
+    dLat: 0.0005,
+    dLng: -0.0004
+  },
+  {
+    id: "SG-342",
+    callsign: "SpiceJet SG-342",
+    aircraft_type: "Boeing 737-MAX",
+    phase: "Cruise",
+    speed_kts: 420,
+    altitude_ft: 18000,
+    vertical_rate: -2500,
+    anomaly_status: "CRITICAL",
+    anomaly_rating: "RAPID DESCENT WARNING",
+    shield_status: "Shield Alert",
+    diagnostic_reasoning: "Unscheduled vertical rate surge detected without ATC descent clearance.",
+    plain_english: "🚨 Sudden Height Drop! The plane is losing altitude much faster than normal without permission.",
+    lat: 17.5200,
+    lng: 78.5800,
+    dLat: -0.0004,
+    dLng: -0.0003
+  },
+  {
+    id: "IX-492",
+    callsign: "Air India Express IX-492",
+    aircraft_type: "Boeing 737-800",
+    phase: "Cruise",
+    speed_kts: 460,
+    altitude_ft: 36000,
+    vertical_rate: 0,
+    anomaly_status: "NORMAL",
+    anomaly_rating: "NOMINAL",
+    shield_status: "Active",
+    diagnostic_reasoning: "Cruising smoothly at high altitude.",
+    plain_english: "Flight operating normally across Telangana skies.",
+    lat: 17.9689,
+    lng: 79.5941,
+    dLat: 0.0003,
+    dLng: 0.0004
+  }
+];
+
 export default function App() {
-  const [flights, setFlights] = useState([]);
-  const [selectedFlightId, setSelectedFlightId] = useState(null);
-  const [isLive, setIsLive] = useState(false);
-  const RENDER_BACKEND_URL = 'https://aeroflow-flight-radar.onrender.com';
+  const [flights, setFlights] = useState(DEFAULT_FLEET);
+  const [selectedFlightId, setSelectedFlightId] = useState("AI-784");
 
-  const fetchAirspace = async () => {
-    try {
-      const response = await fetch(`${RENDER_BACKEND_URL}/api/live-flights`);
-      if (response.ok) {
-        const result = await response.json();
-        if (result.flights && result.flights.length > 0) {
-          setFlights(result.flights.map(f => ({
-            ...f,
-            dLat: (Math.random() - 0.5) * 0.001,
-            dLng: (Math.random() - 0.5) * 0.001
-          })));
-          if (!selectedFlightId && result.flights[0]) {
-            setSelectedFlightId(result.flights[0].id);
-          }
-          setIsLive(result.status === 'success');
-        }
-      }
-    } catch (err) {
-      console.error("Error fetching airspace", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchAirspace();
-    const fetchInterval = setInterval(fetchAirspace, 10000);
-    return () => clearInterval(fetchInterval);
-  }, []);
-
-  // Smooth real-time movement loop
+  // Real-time movement loop for all flights
   useEffect(() => {
     const moveInterval = setInterval(() => {
       setFlights(prev =>
@@ -56,20 +120,11 @@ export default function App() {
         }))
       );
     }, 1500);
+
     return () => clearInterval(moveInterval);
   }, []);
 
-  const activeFlight = flights.find(f => f.id === selectedFlightId) || flights[0] || {
-    callsign: "Loading Airspace...",
-    aircraft_type: "Scanning...",
-    phase: "N/A",
-    speed_kts: 0,
-    altitude_ft: 0,
-    anomaly_status: "NORMAL",
-    anomaly_rating: "NOMINAL",
-    diagnostic_reasoning: "Establishing secure connection to Telangana radar...",
-    plain_english: "Waiting for flight telemetry data..."
-  };
+  const activeFlight = flights.find(f => f.id === selectedFlightId) || flights[0];
 
   const triggerAnomaly = (type) => {
     setFlights(prev =>
@@ -98,6 +153,9 @@ export default function App() {
           } else {
             return {
               ...f,
+              altitude_ft: 32000,
+              speed_kts: 450,
+              vertical_rate: 0,
               anomaly_status: "NORMAL",
               anomaly_rating: "NOMINAL",
               shield_status: "Active",
@@ -118,21 +176,22 @@ export default function App() {
           AEROFLOW <span className="bg-amber-500/20 text-amber-400 text-xs px-2 py-1 rounded ml-2 font-mono font-bold">TELANGANA WAR ROOM</span>
         </h1>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400">Radar Status:</span>
-          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${isLive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-sky-500/20 text-sky-400 border border-sky-500/30'}`}>
-            {isLive ? `Live ADS-B Feed (${flights.length} Flights)` : `Active Airspace Feed (${flights.length} Flights)`}
+          <span className="text-xs text-slate-400">Airspace Feed:</span>
+          <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            Active Telemetry Stream ({flights.length} Flights)
           </span>
         </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Map */}
         <div className="lg:col-span-7 bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg flex flex-col h-[520px]">
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Telangana Tactical Flight Map</h2>
             <span className="text-amber-400 font-mono text-xs">Active Aircraft: {flights.length}</span>
           </div>
           <div className="flex-1 w-full rounded-lg overflow-hidden border border-slate-700">
-            <MapContainer center={[17.3850, 78.4867]} zoom={8} style={{ height: '100%', width: '100%' }}>
+            <MapContainer center={[17.3850, 78.4867]} zoom={9} style={{ height: '100%', width: '100%' }}>
               <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               {flights.map((flight) => (
                 <Marker
@@ -156,6 +215,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* Selected Flight Inspector */}
         <div className="lg:col-span-5 flex flex-col gap-4">
           <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg">
             <div className="flex justify-between items-start mb-2">
@@ -194,6 +254,7 @@ export default function App() {
         </div>
       </div>
 
+      {/* Interactive Anomaly Injection Controls */}
       <div className="mt-6 bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg">
         <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-3 font-semibold">
           Anomaly Injection Controls (Target: <span className="text-amber-400">{activeFlight.callsign}</span>)
@@ -211,6 +272,7 @@ export default function App() {
         </div>
       </div>
 
+      {/* Airspace Monitor Table */}
       <div className="mt-6 bg-[#141c2e] border border-slate-800 rounded-xl p-5 shadow-lg">
         <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-4 font-semibold">Telangana Airspace Anomaly Monitor & Flight Statuses</h2>
         <div className="overflow-x-auto">
