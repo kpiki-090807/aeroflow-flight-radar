@@ -1,3 +1,4 @@
+import math
 import requests
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,48 +13,178 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-TELANGANA_BBOX = {"lamin": 15.80, "lomin": 77.20, "lamax": 19.90, "lomax": 81.30}
+# Hyderabad Airport (RGIA) center & radius in nautical miles (covers all of Telangana)
+HYD_LAT = 17.2403
+HYD_LON = 78.4294
+RADIUS_NM = 180
 
-# Reliable Telangana Airspace Fleet
 FALLBACK_FLEET = [
-    {"id": "AI-784", "callsign": "Air India AI-784", "aircraft_type": "Boeing 737-800", "phase": "Approaching", "speed_kts": 450, "altitude_ft": 32000, "vertical_rate": 0, "anomaly_status": "NORMAL", "anomaly_rating": "NOMINAL", "shield_status": "Active", "diagnostic_reasoning": "All parameters are within normal cruise operating envelopes.", "plain_english": "Everything is running smoothly! Cruising safely towards Hyderabad.", "lat": 17.3850, "lng": 78.4867},
-    {"id": "6E-214", "callsign": "IndiGo 6E-214", "aircraft_type": "Airbus A320neo", "phase": "Landing", "speed_kts": 140, "altitude_ft": 1200, "vertical_rate": -700, "anomaly_status": "CRITICAL", "anomaly_rating": "GPS SPOOF DETECTED", "shield_status": "Engaged", "diagnostic_reasoning": "Telemetry deviation detected: High positional variance against radar trajectory.", "plain_english": "⚠️ GPS Signal Interference! The aircraft's navigation system is receiving fake or jammed location signals.", "lat": 17.4500, "lng": 78.3800},
-    {"id": "UK-881", "callsign": "Vistara UK-881", "aircraft_type": "Airbus A321neo", "phase": "Takeoff", "speed_kts": 210, "altitude_ft": 3500, "vertical_rate": 1800, "anomaly_status": "NORMAL", "anomaly_rating": "NOMINAL", "shield_status": "Active", "diagnostic_reasoning": "Nominal climb gradient maintained without trajectory conflict.", "plain_english": "Aircraft is taking off smoothly on its assigned climbing path.", "lat": 17.2400, "lng": 78.4290},
-    {"id": "SG-342", "callsign": "SpiceJet SG-342", "aircraft_type": "Boeing 737-MAX", "phase": "Cruise", "speed_kts": 420, "altitude_ft": 18000, "vertical_rate": -2500, "anomaly_status": "CRITICAL", "anomaly_rating": "RAPID DESCENT WARNING", "shield_status": "Shield Alert", "diagnostic_reasoning": "Unscheduled vertical rate surge detected without ATC descent clearance.", "plain_english": "🚨 Sudden Height Drop! The plane is losing altitude much faster than normal without permission.", "lat": 17.5200, "lng": 78.5800},
-    {"id": "IX-492", "callsign": "Air India Express IX-492", "aircraft_type": "Boeing 737-800", "phase": "Cruise", "speed_kts": 460, "altitude_ft": 36000, "vertical_rate": 0, "anomaly_status": "NORMAL", "anomaly_rating": "NOMINAL", "shield_status": "Active", "diagnostic_reasoning": "Cruising smoothly at high altitude.", "plain_english": "Flight operating normally across Telangana skies.", "lat": 17.9689, "lng": 79.5941}
+    {
+        "id": "vt-alk",
+        "callsign": "AIC784",
+        "airline": "Air India",
+        "aircraft_type": "B788 (Dreamliner)",
+        "phase": "Cruise",
+        "speed_kts": 465,
+        "altitude_ft": 34000,
+        "vertical_rate": 0,
+        "heading": 45,
+        "squawk": "2411",
+        "anomaly_status": "NORMAL",
+        "anomaly_rating": "NOMINAL",
+        "diagnostic_reasoning": "ADS-B trajectory, barometric altitude, and groundspeed align with filed flight plan.",
+        "plain_english": "Everything is running smoothly. The aircraft is cruising safely at high altitude over Hyderabad.",
+        "lat": 17.3850,
+        "lng": 78.4867,
+    },
+    {
+        "id": "vt-izu",
+        "callsign": "IGO214",
+        "airline": "IndiGo",
+        "aircraft_type": "A20N (A320neo)",
+        "phase": "Approaching",
+        "speed_kts": 165,
+        "altitude_ft": 2400,
+        "vertical_rate": -850,
+        "heading": 270,
+        "squawk": "4512",
+        "anomaly_status": "CRITICAL",
+        "anomaly_rating": "GPS SPOOF DETECTED",
+        "diagnostic_reasoning": "High positional drift between ADS-B coordinates and multilateration ground stations.",
+        "plain_english": "⚠️ GPS Signal Interference! The airplane's navigation system is receiving conflicting or spoofed location coordinates.",
+        "lat": 17.3100,
+        "lng": 78.6200,
+    },
+    {
+        "id": "vt-tnv",
+        "callsign": "VTI881",
+        "airline": "Vistara",
+        "aircraft_type": "A21N (A321neo)",
+        "phase": "Climb",
+        "speed_kts": 245,
+        "altitude_ft": 6800,
+        "vertical_rate": 2100,
+        "heading": 15,
+        "squawk": "1104",
+        "anomaly_status": "NORMAL",
+        "anomaly_rating": "NOMINAL",
+        "diagnostic_reasoning": "Nominal departure climb profile out of RGIA Shamshabad.",
+        "plain_english": "Taking off smoothly and climbing safely toward its cruising altitude.",
+        "lat": 17.4800,
+        "lng": 78.4400,
+    },
+    {
+        "id": "vt-syd",
+        "callsign": "SEJ342",
+        "airline": "SpiceJet",
+        "aircraft_type": "B38M (737 MAX)",
+        "phase": "Descent",
+        "speed_kts": 410,
+        "altitude_ft": 16500,
+        "vertical_rate": -3100,
+        "heading": 210,
+        "squawk": "7700",
+        "anomaly_status": "CRITICAL",
+        "anomaly_rating": "RAPID DESCENT WARNING",
+        "diagnostic_reasoning": "Vertical descent rate exceeds 3,000 ft/min outside standard STAR approach corridor.",
+        "plain_english": "🚨 Sudden Altitude Drop! The plane is losing height rapidly and broadcasting an emergency squawk.",
+        "lat": 17.8500,
+        "lng": 79.3500,
+    },
 ]
 
+def evaluate_flight_dna(alt_ft, speed_kts, v_rate, squawk):
+    """Analyzes real-time telemetry parameters for anomalies."""
+    if str(squawk) in ["7500", "7600", "7700"]:
+        return (
+            "CRITICAL",
+            f"EMERGENCY SQUAWK {squawk}",
+            f"Transponder broadcasting priority emergency code {squawk}.",
+            f"🚨 Emergency Alert! The pilot has set transponder code {squawk}, signaling an urgent in-flight situation to Air Traffic Control."
+        )
+    if v_rate < -2800 and alt_ft > 5000:
+        return (
+            "CRITICAL",
+            "RAPID DESCENT WARNING",
+            f"Abnormal vertical descent rate of {v_rate} ft/min detected at {alt_ft} ft.",
+            "🚨 Sudden Height Drop! The aircraft is descending significantly faster than normal commercial limits."
+        )
+    if alt_ft > 15000 and speed_kts < 160 and speed_kts > 0:
+        return (
+            "CRITICAL",
+            "AIRSPEED / GPS ANOMALY",
+            f"Groundspeed ({speed_kts} kts) is critically low for cruise altitude ({alt_ft} ft).",
+            "⚠️ Speed/Sensor Anomaly! The aircraft's reported speed does not match its high altitude—possible strong headwind or GPS drift."
+        )
+    return (
+        "NORMAL",
+        "NOMINAL",
+        "All ADS-B Flight DNA vectors (altitude, groundspeed, vertical rate) within safe envelope.",
+        "Everything is running smoothly. The flight is operating safely within normal parameters."
+    )
+
 @app.get("/api/live-flights")
-def get_live_telangana_flights():
+def get_live_flights():
+    # Primary Source: ADSB.fi (Reliable real-time live flight feed)
     try:
-        url = f"https://opensky-network.org/api/states/all?lamin={TELANGANA_BBOX['lamin']}&lomin={TELANGANA_BBOX['lomin']}&lamax={TELANGANA_BBOX['lamax']}&lomax={TELANGANA_BBOX['lomax']}"
-        response = requests.get(url, timeout=3)
-        if response.status_code == 200:
-            data = response.json()
-            states = data.get("states", [])
-            if states and len(states) > 0:
-                live_flights = []
-                for s in states:
-                    lat, lng = s[6], s[5]
-                    if lat and lng:
-                        live_flights.append({
-                            "id": s[0],
-                            "callsign": s[1].strip() if s[1] else s[0],
-                            "aircraft_type": "Commercial Jet",
-                            "phase": "Cruise",
-                            "speed_kts": int(s[9] * 1.94384) if s[9] else 350,
-                            "altitude_ft": int(s[7] * 3.28084) if s[7] else 10000,
-                            "anomaly_status": "NORMAL",
-                            "anomaly_rating": "NOMINAL",
-                            "shield_status": "Active",
-                            "diagnostic_reasoning": "Live telemetry verified.",
-                            "plain_english": "Flight operating normally across Telangana airspace.",
-                            "lat": lat,
-                            "lng": lng
-                        })
-                if len(live_flights) > 0:
-                    return {"status": "success", "flights": live_flights}
-    except Exception:
-        pass
-    
-    return {"status": "fallback", "flights": FALLBACK_FLEET}
+        url = f"https://opendata.adsb.fi/api/v2/lat/{HYD_LAT}/lon/{HYD_LON}/dist/{RADIUS_NM}"
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            aircraft_list = data.get("aircraft", [])
+            live_flights = []
+
+            for ac in aircraft_list:
+                lat = ac.get("lat")
+                lon = ac.get("lon")
+                if lat is None or lon is None:
+                    continue
+
+                callsign = (ac.get("flight") or ac.get("hex") or "UNKNOWN").strip()
+                alt_baro = ac.get("alt_baro")
+                alt_ft = 0 if alt_baro == "ground" or alt_baro is None else int(alt_baro)
+                speed_kts = int(ac.get("gs") or 0)
+                v_rate = int(ac.get("baro_rate") or 0)
+                heading = int(ac.get("track") or 0)
+                squawk = ac.get("squawk") or "N/A"
+                ac_type = ac.get("t") or "ADS-B Aircraft"
+
+                if alt_baro == "ground" or alt_ft < 100:
+                    phase = "On Ground"
+                elif v_rate > 400:
+                    phase = "Climb"
+                elif v_rate < -400:
+                    phase = "Descent"
+                elif alt_ft < 5000:
+                    phase = "Approaching"
+                else:
+                    phase = "Cruise"
+
+                status, rating, reasoning, plain_eng = evaluate_flight_dna(alt_ft, speed_kts, v_rate, squawk)
+
+                live_flights.append({
+                    "id": ac.get("hex", callsign),
+                    "callsign": callsign,
+                    "airline": "Live ADS-B",
+                    "aircraft_type": ac_type,
+                    "phase": phase,
+                    "speed_kts": speed_kts,
+                    "altitude_ft": alt_ft,
+                    "vertical_rate": v_rate,
+                    "heading": heading,
+                    "squawk": squawk,
+                    "anomaly_status": status,
+                    "anomaly_rating": rating,
+                    "diagnostic_reasoning": reasoning,
+                    "plain_english": plain_eng,
+                    "lat": lat,
+                    "lng": lon
+                })
+
+            if len(live_flights) > 0:
+                return {"status": "live", "source": "ADSB.fi Live Radar", "count": len(live_flights), "flights": live_flights}
+    except Exception as e:
+        print(f"ADSB.fi fetch error: {e}")
+
+    # Fallback if offline or no flights detected
+    return {"status": "fallback", "source": "Simulated Telangana Airspace", "count": len(FALLBACK_FLEET), "flights": FALLBACK_FLEET}
