@@ -215,8 +215,7 @@ export default function App() {
             }
           }
         }
-      }git fetch
-git status
+      }
     };
 
     const startPolling = (abortCurrent = false) => {
