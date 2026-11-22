@@ -48,6 +48,7 @@ const SECTOR_PRESETS = [
   { label: 'Chennai', center: [12.994, 80.170], zoom: 8 },
   { label: 'Ahmedabad', center: [23.073, 72.626], zoom: 8 },
 ];
+
 const DEMO_FLIGHTS = [
   {
     id: 'demo-1',
@@ -89,12 +90,32 @@ const DEMO_FLIGHTS = [
   },
 ];
 
+const normalizeFlight = (flight, index) => ({
+  id: flight.id ?? flight.icao24 ?? flight.callsign ?? `flight-${index}`,
+  callsign: flight.callsign || flight.flight || 'UNKNOWN',
+  sector: flight.sector || 'India FIR',
+  aircraft_type: flight.aircraft_type || flight.type || 'ADS-B Aircraft',
+  phase: flight.phase || 'Cruise',
+  speed_kts: Number(flight.speed_kts ?? flight.velocity_kts ?? 0),
+  altitude_ft: Number(flight.altitude_ft ?? flight.baro_altitude_ft ?? 0),
+  vertical_rate: Number(flight.vertical_rate ?? 0),
+  heading: Number(flight.heading ?? flight.true_track ?? 0),
+  squawk: flight.squawk || 'N/A',
+  anomaly_status: flight.anomaly_status || 'NORMAL',
+  anomaly_rating: flight.anomaly_rating || 'NOMINAL',
+  diagnostic_reasoning: flight.diagnostic_reasoning || 'Telemetry within expected nominal parameters.',
+  plain_english: flight.plain_english || 'Aircraft kinematics and transponder data appear normal.',
+  lat: Number(flight.lat),
+  lng: Number(flight.lng),
+  source: flight.source || 'live',
+});
+
 export default function App() {
   const [liveFlights, setLiveFlights] = useState([]);
   const [demoMode, setDemoMode] = useState(false);
   const [selectedFlightId, setSelectedFlightId] = useState(null);
-  const [feedSource, setFeedSource] = useState("Connecting to live radar...");
-  const [feedStatus, setFeedStatus] = useState("loading");
+  const [feedSource, setFeedSource] = useState('Connecting to live radar...');
+  const [feedStatus, setFeedStatus] = useState('loading');
   const [cacheAgeSeconds, setCacheAgeSeconds] = useState(null);
   const [fetchedAt, setFetchedAt] = useState(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -104,12 +125,35 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [targetView, setTargetView] = useState(SECTOR_PRESETS[0]);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const rawApiUrl = import.meta.env.VITE_API_URL || 'https://aeroflow-flight-radar.onrender.com';
+  const API_URL = rawApiUrl.replace(/\/+$/, '');
 
   useEffect(() => {
     let activeController = null;
     let pollTimeout = null;
     let disposed = false;
+
+    const fetchFlightsPayload = async (signal) => {
+      const endpoints = [`${API_URL}/api/live-flights`, `${API_URL}/live-flights`];
+      let lastError = null;
+
+      for (const url of endpoints) {
+        const response = await fetch(url, { signal });
+        if (response.ok) {
+          return response.json();
+        }
+        const error = new Error(`Live radar request failed with status ${response.status}`);
+        error.status = response.status;
+        error.retryable = [408, 429, 500, 502, 503, 504].includes(response.status);
+        lastError = error;
+
+        if (response.status !== 404) {
+          throw error;
+        }
+      }
+
+      throw lastError || new Error('Live radar endpoint not found');
+    };
 
     const poll = async () => {
       if (document.hidden || disposed) return;
@@ -130,33 +174,42 @@ export default function App() {
         let retryDelay = 2000;
         while (!controller.signal.aborted && Date.now() < deadline) {
           try {
-            const response = await fetch(`${API_URL}/api/live-flights`, { signal: controller.signal });
-            if (!response.ok) {
-              const error = new Error(`Live radar request failed with status ${response.status}`);
-              error.retryable = [502, 503, 504].includes(response.status);
-              throw error;
-            }
-
-            const data = await response.json();
+            const data = await fetchFlightsPayload(controller.signal);
             if (controller.signal.aborted || disposed) return;
 
-            const validFlights = Array.isArray(data.flights)
-              ? data.flights.filter((flight) => flight.source === 'adsb.fi' || flight.source === 'opensky')
+            const rawList = Array.isArray(data)
+              ? data
+              : Array.isArray(data?.flights)
+              ? data.flights
               : [];
-            if (data.status === 'live' || data.status === 'stale') {
+
+            const validFlights = rawList
+              .filter(
+                (flight) =>
+                  flight &&
+                  flight.source !== 'demo' &&
+                  Number.isFinite(Number(flight.lat)) &&
+                  Number.isFinite(Number(flight.lng))
+              )
+              .map(normalizeFlight);
+
+            setIsWakingUp(false);
+
+            if (validFlights.length > 0 || data?.status === 'live' || data?.status === 'stale') {
               setLiveFlights(validFlights);
-              setFeedSource(data.source || 'All-India Live Radar');
-              setFeedStatus(data.status);
-              setCacheAgeSeconds(data.status === 'stale' ? data.cache_age_seconds : null);
+              setFeedSource(data?.source || 'All-India Live Radar');
+              setFeedStatus(data?.status || (validFlights.length > 0 ? 'live' : 'unavailable'));
+              setCacheAgeSeconds(data?.status === 'stale' ? data?.cache_age_seconds : null);
+              setIsLive(validFlights.length > 0 && data?.status !== 'stale');
             } else {
               setLiveFlights([]);
               setFeedSource('Live feed unavailable');
               setFeedStatus('unavailable');
               setCacheAgeSeconds(null);
+              setIsLive(false);
             }
-            setFetchedAt(data.fetched_at || null);
-            setIsLive(data.status === 'live');
-            setIsWakingUp(false);
+
+            setFetchedAt(data?.fetched_at || new Date().toISOString());
             shouldScheduleNextPoll = true;
             break;
           } catch (error) {
@@ -418,61 +471,61 @@ export default function App() {
         <div className="lg:col-span-5 flex flex-col gap-4">
           {activeFlight ? (
             <>
-          <div className="bg-[#1c2a44]/80 border border-slate-700/70 rounded-xl p-4 shadow-lg">
-            <div className="flex justify-between items-start">
-              <div>
-                <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Selected Flight DNA Profile</span>
-                <div className="text-3xl font-mono font-extrabold text-[#c9a46a] mt-0.5">{activeFlight.callsign}</div>
+              <div className="bg-[#1c2a44]/80 border border-slate-700/70 rounded-xl p-4 shadow-lg">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Selected Flight DNA Profile</span>
+                    <div className="text-3xl font-mono font-extrabold text-[#c9a46a] mt-0.5">{activeFlight.callsign}</div>
+                  </div>
+                  {demoMode && (
+                    <span className="rounded border border-amber-400/60 bg-amber-400/15 px-2 py-1 text-[10px] font-bold text-amber-300">
+                      SIMULATED DATA
+                    </span>
+                  )}
+                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-sky-950 text-sky-300 border border-sky-700/60">
+                    {activeFlight.phase}
+                  </span>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-300 mt-3 pt-3 border-t border-slate-700/60">
+                  <span>Sector: <b className="text-white">{activeFlight.sector || 'India FIR'}</b></span>
+                  <span>Squawk: <b className="font-mono text-amber-300">{activeFlight.squawk}</b></span>
+                  <span>Coords: <b className="font-mono text-sky-300">{activeFlight.lat.toFixed(2)}°N, {activeFlight.lng.toFixed(2)}°E</b></span>
+                </div>
               </div>
-              {demoMode && (
-                <span className="rounded border border-amber-400/60 bg-amber-400/15 px-2 py-1 text-[10px] font-bold text-amber-300">
-                  SIMULATED DATA
-                </span>
-              )}
-              <span className="text-xs font-bold px-3 py-1 rounded-full bg-sky-950 text-sky-300 border border-sky-700/60">
-                {activeFlight.phase}
-              </span>
-            </div>
-            <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-300 mt-3 pt-3 border-t border-slate-700/60">
-              <span>Sector: <b className="text-white">{activeFlight.sector || 'India FIR'}</b></span>
-              <span>Squawk: <b className="font-mono text-amber-300">{activeFlight.squawk}</b></span>
-              <span>Coords: <b className="font-mono text-sky-300">{activeFlight.lat.toFixed(2)}°N, {activeFlight.lng.toFixed(2)}°E</b></span>
-            </div>
-          </div>
 
-          <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg grid grid-cols-3 gap-3">
-            <div className="bg-[#0b1020]/70 p-3 rounded-lg border border-slate-800">
-              <p className="text-[11px] text-slate-400">Groundspeed</p>
-              <p className="text-lg font-mono font-bold text-amber-400 mt-0.5">{activeFlight.speed_kts} <span className="text-[11px] text-slate-400">kts</span></p>
-            </div>
-            <div className="bg-[#0b1020]/70 p-3 rounded-lg border border-slate-800">
-              <p className="text-[11px] text-slate-400">Altitude</p>
-              <p className="text-lg font-mono font-bold text-cyan-400 mt-0.5">{activeFlight.altitude_ft.toLocaleString()} <span className="text-[11px] text-slate-400">ft</span></p>
-            </div>
-            <div className="bg-[#0b1020]/70 p-3 rounded-lg border border-slate-800">
-              <p className="text-[11px] text-slate-400">Heading / V-Rate</p>
-              <p className="text-sm font-mono font-bold text-emerald-400 mt-1">
-                {activeFlight.heading}° • {activeFlight.vertical_rate > 0 ? `+${activeFlight.vertical_rate}` : activeFlight.vertical_rate} fpm
-              </p>
-            </div>
-          </div>
+              <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg grid grid-cols-3 gap-3">
+                <div className="bg-[#0b1020]/70 p-3 rounded-lg border border-slate-800">
+                  <p className="text-[11px] text-slate-400">Groundspeed</p>
+                  <p className="text-lg font-mono font-bold text-amber-400 mt-0.5">{activeFlight.speed_kts} <span className="text-[11px] text-slate-400">kts</span></p>
+                </div>
+                <div className="bg-[#0b1020]/70 p-3 rounded-lg border border-slate-800">
+                  <p className="text-[11px] text-slate-400">Altitude</p>
+                  <p className="text-lg font-mono font-bold text-cyan-400 mt-0.5">{activeFlight.altitude_ft.toLocaleString()} <span className="text-[11px] text-slate-400">ft</span></p>
+                </div>
+                <div className="bg-[#0b1020]/70 p-3 rounded-lg border border-slate-800">
+                  <p className="text-[11px] text-slate-400">Heading / V-Rate</p>
+                  <p className="text-sm font-mono font-bold text-emerald-400 mt-1">
+                    {activeFlight.heading}° • {activeFlight.vertical_rate > 0 ? `+${activeFlight.vertical_rate}` : activeFlight.vertical_rate} fpm
+                  </p>
+                </div>
+              </div>
 
-          <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg flex-1 flex flex-col justify-between">
-            <div>
-              <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-2 font-semibold">Explainable AI (XAI) Diagnostics</h2>
-              <div className={`p-3 rounded-lg text-center font-bold text-xs tracking-wide ${activeFlight.anomaly_status === 'CRITICAL' ? 'bg-red-600 text-white animate-pulse shadow-lg' : 'bg-emerald-600 text-white'}`}>
-                {activeFlight.anomaly_status === 'CRITICAL' ? `CRITICAL: ${activeFlight.anomaly_rating}` : 'STATUS: NOMINAL FLIGHT DNA'}
+              <div className="bg-[#141c2e] border border-slate-800 rounded-xl p-4 shadow-lg flex-1 flex flex-col justify-between">
+                <div>
+                  <h2 className="text-xs uppercase tracking-wider text-slate-400 mb-2 font-semibold">Explainable AI (XAI) Diagnostics</h2>
+                  <div className={`p-3 rounded-lg text-center font-bold text-xs tracking-wide ${activeFlight.anomaly_status === 'CRITICAL' ? 'bg-red-600 text-white animate-pulse shadow-lg' : 'bg-emerald-600 text-white'}`}>
+                    {activeFlight.anomaly_status === 'CRITICAL' ? `CRITICAL: ${activeFlight.anomaly_rating}` : 'STATUS: NOMINAL FLIGHT DNA'}
+                  </div>
+                  <div className="mt-3 bg-[#0b1020]/80 border border-slate-800 p-2.5 rounded-lg">
+                    <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Technical Analysis</p>
+                    <p className="text-xs text-slate-300 font-mono mt-1">{activeFlight.diagnostic_reasoning}</p>
+                  </div>
+                </div>
+                <div className="mt-3 bg-indigo-950/50 border border-indigo-500/40 p-3 rounded-lg">
+                  <p className="text-[11px] uppercase tracking-wider text-indigo-300 font-bold mb-1">💡 What This Means in Plain English</p>
+                  <p className="text-xs text-slate-100 leading-relaxed">{activeFlight.plain_english}</p>
+                </div>
               </div>
-              <div className="mt-3 bg-[#0b1020]/80 border border-slate-800 p-2.5 rounded-lg">
-                <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Technical Analysis</p>
-                <p className="text-xs text-slate-300 font-mono mt-1">{activeFlight.diagnostic_reasoning}</p>
-              </div>
-            </div>
-            <div className="mt-3 bg-indigo-950/50 border border-indigo-500/40 p-3 rounded-lg">
-              <p className="text-[11px] uppercase tracking-wider text-indigo-300 font-bold mb-1">💡 What This Means in Plain English</p>
-              <p className="text-xs text-slate-100 leading-relaxed">{activeFlight.plain_english}</p>
-            </div>
-          </div>
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center rounded-xl border border-slate-700/70 bg-[#1c2a44]/80 p-6 text-center text-sm font-semibold text-slate-300" role="status">
