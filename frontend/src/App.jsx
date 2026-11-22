@@ -45,8 +45,9 @@ const SECTOR_PRESETS = [
   { label: 'Mumbai', center: [19.089, 72.865], zoom: 8 },
   { label: 'Bengaluru', center: [13.198, 77.706], zoom: 8 },
   { label: 'Kolkata', center: [22.652, 88.446], zoom: 8 },
+  { label: 'Chennai', center: [12.994, 80.170], zoom: 8 },
+  { label: 'Ahmedabad', center: [23.073, 72.626], zoom: 8 },
 ];
-
 const DEMO_FLIGHTS = [
   {
     id: 'demo-1',
